@@ -19,25 +19,21 @@ jobs:
                   distribution: "temurin"
                   java-version: "17"
 
-            - name: Set up Flutter
-              uses: subosito/flutter-action@v2
-              with:
-                  channel: "stable"
-
             - name: Set up Python
               uses: actions/setup-python@v5
               with:
                   python-version: "3.12"
 
-            - name: Install uv and build tools
+            - name: Install dependencies
               run: |
                   python -m pip install --upgrade pip
                   pip install uv
-                  uv pip install --system flet flet-cli yt-dlp
+                  uv pip install --system "flet==0.22.1" flet-cli yt-dlp
 
             - name: Build APK with Flet
               run: |
-                  flet build apk
+                  # --no-interactive перериває інтерактивні підказки і дозволяє Flet автоматично скачати потрібний Flutter SDK
+                  flet build apk --no-interactive
 
             - name: Upload APK Artifact
               uses: actions/upload-artifact@v4
