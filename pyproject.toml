@@ -1,0 +1,10 @@
+[project]
+name = "audio-downloader-android"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flet==0.22.1",
+    "yt-dlp>=2026.8.19",
+]

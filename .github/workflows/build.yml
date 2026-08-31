@@ -1,0 +1,46 @@
+name: Build Android APK
+
+on:
+    push:
+        branches: [main, master]
+    workflow_dispatch:
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Java 17
+              uses: actions/setup-java@v4
+              with:
+                  distribution: "temurin"
+                  java-version: "17"
+
+            - name: Set up Flutter
+              uses: subosito/flutter-action@v2
+              with:
+                  channel: "stable"
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+
+            - name: Install uv and build tools
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install uv
+                  uv pip install --system flet flet-cli yt-dlp
+
+            - name: Build APK with Flet
+              run: |
+                  flet build apk
+
+            - name: Upload APK Artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: app-release
+                  path: build/apk/*.apk
