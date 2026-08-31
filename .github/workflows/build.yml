@@ -19,9 +19,11 @@ jobs:
                   distribution: "temurin"
                   java-version: "17"
 
+            # Фіксуємо конкретну версію Flutter, сумісну з Flet 0.22.x
             - name: Set up Flutter
               uses: subosito/flutter-action@v2
               with:
+                  flutter-version: "3.22.2"
                   channel: "stable"
 
             - name: Set up Python
@@ -37,7 +39,6 @@ jobs:
 
             - name: Build APK with Flet
               run: |
-                  # Команда yes автоматично відповідає 'y' на будь-які підказки Flet CLI
                   yes | flet build apk
 
             - name: Upload APK Artifact
