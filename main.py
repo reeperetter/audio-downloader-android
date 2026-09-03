@@ -392,4 +392,15 @@ async def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    try:
+        ft.app(target=main)
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        
+        def error_view(page: ft.Page):
+            page.add(
+                ft.Text("Критична помилка при запуску:", color="red", weight="bold"),
+                ft.Text(err_msg, selectable=True)
+            )
+        ft.app(target=error_view)
