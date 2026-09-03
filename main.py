@@ -3,7 +3,11 @@ import os
 import re
 import tempfile
 import flet as ft
-import yt_dlp
+# yt_dlp навмисно НЕ імпортується тут: на Android збірка може не мати
+# сумісних колес для деяких його C-залежностей (brotli, pycryptodomex тощо).
+# Якщо імпорт впаде тут, на верхньому рівні модуля, застосунок помре ще
+# до створення першого віджета -> білий екран без жодного повідомлення.
+# Тому імпортуємо лениво, всередині функцій, де вже є try/except.
 
 
 def format_duration(seconds):
@@ -128,6 +132,7 @@ async def main(page: ft.Page):
             loop = asyncio.get_running_loop()
 
             def _get_stream_url():
+                import yt_dlp  # лінивий імпорт, помилка потрапить у except нижче
                 ydl_opts = {
                     "format": "bestaudio/best",
                     "quiet": True,
@@ -176,6 +181,7 @@ async def main(page: ft.Page):
             loop = asyncio.get_running_loop()
 
             def _search_sync():
+                import yt_dlp  # лінивий імпорт, помилка потрапить у except нижче
                 search_query = f"ytsearch{limit}:{query} audio"
                 ydl_opts = {
                     "extract_flat": True,
@@ -324,6 +330,7 @@ async def main(page: ft.Page):
 
             # Налаштування без використання системного ffmpeg (адаптовано під Android)
             def _download_sync():
+                import yt_dlp  # лінивий імпорт, помилка потрапить у except нижче
                 ydl_opts = {
                     "format": "m4a/bestaudio/best",
                     "outtmpl": os.path.join(selected_folder, "%(title)s.%(ext)s"),

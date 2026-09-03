@@ -8,3 +8,22 @@ dependencies = [
     "flet==0.22.1",
     "yt-dlp>=2026.8.19",
 ]
+
+[tool.flet.android]
+# Явно перелічуємо всі транзитивні залежності yt-dlp, щоб flet build apk
+# точно спробував їх зібрати/включити для Android-архітектури, а не
+# просто скопіювати host-колеса з ubuntu-runner (це і є типова причина
+# "збірка пройшла успішно, а на телефоні білий екран").
+dependencies = [
+    "yt-dlp",
+    "mutagen",
+    "certifi",
+    "requests",
+    "urllib3",
+    "idna",
+    "charset-normalizer",
+]
+permissions = [
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+]
