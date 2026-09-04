@@ -84,8 +84,8 @@ async def main(page: ft.Page):
             width=80,
         )
 
-        # Кнопка пошуку - тепер це кругла іконка-лупа, а не текстова кнопка,
-        # щоб не забирати горизонтальний простір у поля вводу.
+        # Кнопка пошуку - кругла іконка-лупа, стоїть в одному рядку разом
+        # із полем вводу і лічильником кількості результатів.
         search_button = ft.IconButton(
             icon=ft.icons.SEARCH,
             icon_color=ft.colors.WHITE,
@@ -99,14 +99,15 @@ async def main(page: ft.Page):
         select_all_btn = ft.OutlinedButton("Все", expand=True)
         clear_btn = ft.OutlinedButton("Скинути", expand=True)
 
-        # Кнопка завантаження тепер зелена, повністю окремим рядком, щоб
-        # явно виділятись серед інших елементів керування.
+        # Кнопка завантаження - зелена, на всю ширину екрана і трохи товща
+        # по вертикалі (додатковий вертикальний padding через style).
         download_btn = ft.ElevatedButton(
             "Завантажити обране",
             icon=ft.icons.DOWNLOAD,
             disabled=True,
             bgcolor=ft.colors.GREEN,
             color=ft.colors.WHITE,
+            style=ft.ButtonStyle(padding=ft.padding.symmetric(vertical=20)),
         )
 
         status_label = ft.Text("Готовий до роботи", size=13)
@@ -183,11 +184,14 @@ async def main(page: ft.Page):
                     if not url:
                         continue
 
-                    channel = clean_title(entry.get("channel") or entry.get("uploader") or "")
+                    channel = clean_title(
+                        entry.get("channel") or entry.get("uploader") or "")
                     duration_str = format_duration(entry.get("duration"))
-                    display_title = f"{channel} — {title}" if channel and not title.startswith(channel) else title
+                    display_title = f"{channel} — {title}" if channel and not title.startswith(
+                        channel) else title
 
-                    search_results_data.append({"url": url, "title": display_title})
+                    search_results_data.append(
+                        {"url": url, "title": display_title})
 
                     checkbox = ft.Checkbox(value=False)
 
@@ -197,7 +201,8 @@ async def main(page: ft.Page):
                         max_lines=2,
                         overflow=ft.TextOverflow.ELLIPSIS,
                     )
-                    duration_text = ft.Text(duration_str, size=11, color=ft.colors.GREY_600)
+                    duration_text = ft.Text(
+                        duration_str, size=11, color=ft.colors.GREY_600)
 
                     play_button = ft.IconButton(
                         icon=ft.icons.PLAY_ARROW,
@@ -234,7 +239,8 @@ async def main(page: ft.Page):
                             spacing=4,
                         ),
                         padding=ft.padding.symmetric(vertical=2, horizontal=2),
-                        border=ft.border.only(bottom=ft.BorderSide(1, ft.colors.GREY_300)),
+                        border=ft.border.only(
+                            bottom=ft.BorderSide(1, ft.colors.GREY_300)),
                     )
 
                     results_list.controls.append(row_item)
@@ -281,7 +287,8 @@ async def main(page: ft.Page):
                     selected_urls.append(search_results_data[i]["url"])
 
             if not selected_urls:
-                page.snack_bar = ft.SnackBar(ft.Text("Виберіть хоча б один трек!"))
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("Виберіть хоча б один трек!"))
                 page.snack_bar.open = True
                 await page.update_async()
                 return
@@ -295,14 +302,16 @@ async def main(page: ft.Page):
 
             def _progress_hook(d):
                 if d["status"] == "downloading":
-                    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                    total = d.get("total_bytes") or d.get(
+                        "total_bytes_estimate") or 0
                     downloaded = d.get("downloaded_bytes") or 0
                     if total > 0:
                         percentage = downloaded / total
                         progress_bar.value = percentage
                         filename = os.path.basename(d.get("filename", ""))
                         status_label.value = f"Завантаження ({int(percentage * 100)}%): {filename}"
-                        asyncio.run_coroutine_threadsafe(page.update_async(), loop)
+                        asyncio.run_coroutine_threadsafe(
+                            page.update_async(), loop)
 
                 elif d["status"] == "finished":
                     progress_bar.value = 1.0
@@ -333,15 +342,18 @@ async def main(page: ft.Page):
                 if len(existing) == len(selected_urls) and existing:
                     progress_bar.value = 1.0
                     status_label.value = f"Готово! Збережено {len(existing)} трек(ів)."
-                    page.snack_bar = ft.SnackBar(ft.Text(f"Збережено {len(existing)} трек(ів)."))
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"Збережено {len(existing)} трек(ів)."))
                     page.snack_bar.open = True
                 elif existing:
                     status_label.value = f"Частково: {len(existing)} із {len(selected_urls)}."
-                    page.snack_bar = ft.SnackBar(ft.Text("Не всі треки вдалося зберегти."))
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("Не всі треки вдалося зберегти."))
                     page.snack_bar.open = True
                 else:
                     status_label.value = "Файли не збереглися."
-                    page.snack_bar = ft.SnackBar(ft.Text("Завантаження не вдалося зберегти на диск."))
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("Завантаження не вдалося зберегти на диск."))
                     page.snack_bar.open = True
 
             except Exception as exc:
@@ -361,12 +373,14 @@ async def main(page: ft.Page):
         page.add(
             ft.Column(
                 controls=[
-                    ft.Text("🎵 Music Downloader", size=18, weight=ft.FontWeight.BOLD),
+                    ft.Text("🎵 Music Downloader", size=18,
+                            weight=ft.FontWeight.BOLD),
 
-                    # Поле пошуку - на всю ширину окремим рядком (більше не
-                    # затиснуте лічильником і кнопкою).
-                    search_input,
-                    ft.Row(controls=[limit_combo, search_button], spacing=8),
+                    # Пошук - поле вводу, лічильник і кнопка-лупа в одному
+                    # рядку. Поле вводу забирає всю доступну ширину
+                    # (expand=True), решта - фіксованого розміру.
+                    ft.Row(controls=[search_input, limit_combo,
+                           search_button], spacing=8),
 
                     # Результати пошуку - займають усе вільне місце.
                     ft.Container(
@@ -390,7 +404,8 @@ async def main(page: ft.Page):
             )
         )
     except Exception as main_err:
-        page.add(ft.Text(f"Помилка запуску додатку: {main_err}", color="red", selectable=True))
+        page.add(
+            ft.Text(f"Помилка запуску додатку: {main_err}", color="red", selectable=True))
 
 
 if __name__ == "__main__":
@@ -402,7 +417,8 @@ if __name__ == "__main__":
 
         def error_view(page: ft.Page):
             page.add(
-                ft.Text("Критична помилка при запуску:", color="red", weight="bold"),
+                ft.Text("Критична помилка при запуску:",
+                        color="red", weight="bold"),
                 ft.Text(err_msg, selectable=True)
             )
         ft.app(target=error_view)
