@@ -41,8 +41,27 @@ jobs:
               run: |
                   yes | flet build apk -vv
 
+            # Підписуємо APK нашим власним постійним ключем. Це критично:
+            # без цього кроку flet build apk або залишає APK взагалі
+            # непідписаним, або підписує тимчасовим debug-ключем, який на
+            # кожному новому запуску GitHub Actions може бути іншим - через
+            # це Android відмовляється встановлювати оновлену версію поверх
+            # старої ("App not installed" / підпис не збігається) і взагалі
+            # може попереджати про "невідоме джерело".
+            - name: Sign APK with release keystore
+              uses: r0adkll/sign-android-release@v1
+              id: sign_apk
+              with:
+                  releaseDirectory: build/apk
+                  signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
+                  alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+                  keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+                  keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+              env:
+                  BUILD_TOOLS_VERSION: "34.0.0"
+
             - name: Upload APK Artifact
               uses: actions/upload-artifact@v4
               with:
                   name: app-release
-                  path: build/apk/*.apk
+                  path: ${{ steps.sign_apk.outputs.signedReleaseFile }}

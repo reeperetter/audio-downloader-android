@@ -65,13 +65,15 @@ async def main(page: ft.Page):
         # Тепла кольорова гама застосунку (жовтогарячий/бурштиновий).
         page.theme = ft.Theme(color_scheme_seed=ft.colors.DEEP_ORANGE)
         page.bgcolor = ft.colors.ORANGE_50
-        page.padding = 10
+        # Невеликий додатковий відступ згори, щоб заголовок не ховався
+        # під вирізом камери на екрані.
+        page.padding = ft.padding.only(left=10, right=10, bottom=10, top=26)
 
         selected_folder = get_default_download_dir()
         search_results_data = []
 
         search_input = ft.TextField(
-            hint_text="Введіть назву пісні або виконавця...",
+            hint_text="Назва пісні або виконавця",
             expand=True,
             text_size=16,
             content_padding=ft.padding.symmetric(horizontal=12, vertical=14),
@@ -351,12 +353,19 @@ async def main(page: ft.Page):
 
                 if len(existing) == len(selected_urls) and existing:
                     progress_bar.value = 1.0
-                    status_label.value = f"Готово! Збережено {len(existing)} трек(ів)."
+                    # Шлях показуємо тільки тут, у підсумковому повідомленні
+                    # після завершення завантаження - не як постійний напис
+                    # на екрані.
+                    status_label.value = f"Готово! Збережено {len(existing)} трек(ів) у: {selected_folder}"
                     page.snack_bar = ft.SnackBar(
-                        ft.Text(f"Збережено {len(existing)} трек(ів)."))
+                        ft.Text(
+                            f"Збережено {len(existing)} трек(ів) у: {selected_folder}")
+                    )
                     page.snack_bar.open = True
                 elif existing:
-                    status_label.value = f"Частково: {len(existing)} із {len(selected_urls)}."
+                    status_label.value = (
+                        f"Частково: {len(existing)} із {len(selected_urls)} у: {selected_folder}"
+                    )
                     page.snack_bar = ft.SnackBar(
                         ft.Text("Не всі треки вдалося зберегти."))
                     page.snack_bar.open = True
