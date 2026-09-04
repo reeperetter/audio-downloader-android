@@ -32,29 +32,45 @@ def clean_title(title):
     return re.sub(r"\s+", " ", title).strip()
 
 
+def get_default_download_dir():
+    """
+    Шукаємо реальну публічну папку "Завантаження" на Android.
+    Якщо немає прав/доступу - надійно падаємо в папку самого застосунку
+    (вона завжди доступна для запису без жодних дозволів).
+    """
+    android_downloads = "/storage/emulated/0/Download"
+    try:
+        if os.path.isdir(android_downloads) and os.access(android_downloads, os.W_OK):
+            return android_downloads
+    except Exception:
+        pass
+
+    app_storage = os.getenv("FLET_APP_STORAGE_DATA")
+    if app_storage:
+        music_dir = os.path.join(app_storage, "Music")
+        try:
+            os.makedirs(music_dir, exist_ok=True)
+            return music_dir
+        except Exception:
+            pass
+
+    return tempfile.gettempdir()
+
+
 async def main(page: ft.Page):
     # Захист від білого екрану: глобальний відлов помилок UI
     try:
         page.title = "Music Downloader"
         page.theme_mode = ft.ThemeMode.LIGHT
         page.padding = 10
+        page.scroll = ft.ScrollMode.AUTO
+        page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
 
-        page.window_width = 780
-        page.window_height = 680
-
-        # Адаптація шляху збереження під Android та ПК
-        try:
-            default_dir = os.path.expanduser("~/Storage/Downloads")
-            if not os.path.exists(default_dir):
-                default_dir = os.path.expanduser("~/Music")
-            if not os.path.exists(default_dir):
-                default_dir = tempfile.gettempdir()
-        except Exception:
-            default_dir = tempfile.gettempdir()
-
+        default_dir = get_default_download_dir()
         selected_folder = default_dir
         search_results_data = []
         current_audio = None
+        current_preview_path = None
 
         async def stop_current_audio():
             nonlocal current_audio
@@ -71,6 +87,7 @@ async def main(page: ft.Page):
         search_input = ft.TextField(
             hint_text="Пошук музики...",
             expand=True,
+            autofocus=False,
         )
 
         limit_combo = ft.Dropdown(
@@ -80,22 +97,24 @@ async def main(page: ft.Page):
                 ft.dropdown.Option("20"),
             ],
             value="10",
-            width=75,
+            width=90,
         )
 
-        search_button = ft.ElevatedButton("Шукати")
-        results_list = ft.ListView(expand=True, spacing=5, padding=5)
+        search_button = ft.ElevatedButton("Шукати", icon=ft.icons.SEARCH)
+        results_list = ft.ListView(spacing=8, padding=5, auto_scroll=False)
 
-        select_all_btn = ft.OutlinedButton("Все")
-        clear_btn = ft.OutlinedButton("Скинути")
-        download_btn = ft.ElevatedButton("Завантажити", disabled=True)
+        select_all_btn = ft.OutlinedButton("Все", expand=True)
+        clear_btn = ft.OutlinedButton("Скинути", expand=True)
+        download_btn = ft.ElevatedButton(
+            "Завантажити обране", disabled=True, icon=ft.icons.DOWNLOAD, expand=True
+        )
 
         folder_input = ft.TextField(
-            value=selected_folder, read_only=True, expand=True
+            value=selected_folder, read_only=True, expand=True, text_size=12
         )
-        folder_button = ft.ElevatedButton("Огляд")
+        folder_button = ft.IconButton(icon=ft.icons.FOLDER_OPEN, tooltip="Обрати іншу папку")
 
-        status_label = ft.Text("Готовий до роботи")
+        status_label = ft.Text("Готовий до роботи", size=13)
         progress_bar = ft.ProgressBar(value=0, visible=True)
 
         async def on_folder_result(e: ft.FilePickerResultEvent):
@@ -118,45 +137,57 @@ async def main(page: ft.Page):
             search_button.disabled = busy
             select_all_btn.disabled = busy
             clear_btn.disabled = busy
-            download_btn.disabled = busy
+            download_btn.disabled = busy or not search_results_data
             folder_button.disabled = busy
             await page.update_async()
 
         async def play_audio_preview(url: str, play_btn: ft.IconButton):
-            nonlocal current_audio
+            nonlocal current_audio, current_preview_path
             await stop_current_audio()
 
             play_btn.icon = ft.icons.HOURGLASS_EMPTY
+            play_btn.disabled = True
             await page.update_async()
 
             loop = asyncio.get_running_loop()
+            tmp_dir = tempfile.mkdtemp(prefix="preview_")
 
-            def _get_stream_url():
+            def _download_preview():
                 import yt_dlp  # лінивий імпорт, помилка потрапить у except нижче
+                # Завантажуємо короткий локальний файл прев'ю замість прямого
+                # стрімінгу: пряме посилання YouTube часто вимагає спеціальних
+                # заголовків (headers/Referer), які плеєр Flet передати не може,
+                # тому пряме відтворення URL нерідко падає з мережевою помилкою.
                 ydl_opts = {
-                    "format": "bestaudio/best",
+                    "format": "bestaudio[ext=m4a]/bestaudio/best",
+                    "outtmpl": os.path.join(tmp_dir, "preview.%(ext)s"),
                     "quiet": True,
                     "no_warnings": True,
+                    "noplaylist": True,
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    return info.get("url")
+                    info = ydl.extract_info(url, download=True)
+                    return ydl.prepare_filename(info)
 
             try:
-                stream_url = await loop.run_in_executor(None, _get_stream_url)
-                if stream_url:
-                    audio = ft.Audio(src=stream_url, autoplay=True)
+                local_path = await loop.run_in_executor(None, _download_preview)
+                if local_path and os.path.exists(local_path):
+                    current_preview_path = local_path
+                    audio = ft.Audio(src=local_path, autoplay=True)
                     current_audio = audio
                     page.overlay.append(audio)
                     play_btn.icon = ft.icons.STOP
+                    play_btn.disabled = False
                     await page.update_async()
                 else:
                     play_btn.icon = ft.icons.PLAY_ARROW
-                    page.snack_bar = ft.SnackBar(ft.Text("Не вдалося отримати потік."))
+                    play_btn.disabled = False
+                    page.snack_bar = ft.SnackBar(ft.Text("Не вдалося отримати аудіо для прослуховування."))
                     page.snack_bar.open = True
                     await page.update_async()
             except Exception as exc:
                 play_btn.icon = ft.icons.PLAY_ARROW
+                play_btn.disabled = False
                 page.snack_bar = ft.SnackBar(ft.Text(f"Помилка відтворення: {exc}"))
                 page.snack_bar.open = True
                 await page.update_async()
@@ -223,15 +254,20 @@ async def main(page: ft.Page):
 
                     search_results_data.append({"url": url, "title": display_title})
 
-                    checkbox = ft.Checkbox(
-                        label=f"{display_title} {duration_str}",
-                        value=False,
-                        expand=True,
+                    checkbox = ft.Checkbox(value=False)
+
+                    title_text = ft.Text(
+                        f"{display_title}",
+                        size=13,
+                        max_lines=2,
+                        overflow=ft.TextOverflow.ELLIPSIS,
                     )
+                    duration_text = ft.Text(duration_str, size=11, color=ft.colors.GREY_600)
 
                     play_button = ft.IconButton(
                         icon=ft.icons.PLAY_ARROW,
                         tooltip="Прослухати",
+                        icon_size=22,
                     )
 
                     async def make_play_handler(target_url, btn):
@@ -246,9 +282,29 @@ async def main(page: ft.Page):
 
                     play_button.on_click = await make_play_handler(url, play_button)
 
-                    row_item = ft.Row(
-                        controls=[checkbox, play_button],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    # Мобільна верстка рядка результату: чекбокс + текст займають
+                    # усю доступну ширину (expand=True) в окремому контейнері,
+                    # а кнопка програвання має ФІКСОВАНУ ширину і завжди
+                    # лишається праворуч, не накладаючись на текст назви.
+                    row_item = ft.Container(
+                        content=ft.Row(
+                            controls=[
+                                checkbox,
+                                ft.Container(
+                                    content=ft.Column(
+                                        controls=[title_text, duration_text],
+                                        spacing=2,
+                                        tight=True,
+                                    ),
+                                    expand=True,
+                                ),
+                                ft.Container(content=play_button, width=48),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=4,
+                        ),
+                        padding=ft.padding.symmetric(vertical=4, horizontal=2),
+                        border=ft.border.only(bottom=ft.BorderSide(1, ft.colors.GREY_300)),
                     )
 
                     results_list.controls.append(row_item)
@@ -271,20 +327,18 @@ async def main(page: ft.Page):
         search_button.on_click = start_search
         search_input.on_submit = start_search
 
+        def _checkbox_of(container_row):
+            # container_row -> ft.Container -> ft.Row -> controls[0] == checkbox
+            return container_row.content.controls[0]
+
         async def select_all_click(e):
             for row in results_list.controls:
-                if isinstance(row, ft.Row):
-                    cb = row.controls[0]
-                    if isinstance(cb, ft.Checkbox):
-                        cb.value = True
+                _checkbox_of(row).value = True
             await page.update_async()
 
         async def clear_selection_click(e):
             for row in results_list.controls:
-                if isinstance(row, ft.Row):
-                    cb = row.controls[0]
-                    if isinstance(cb, ft.Checkbox):
-                        cb.value = False
+                _checkbox_of(row).value = False
             await page.update_async()
 
         select_all_btn.on_click = select_all_click
@@ -294,10 +348,9 @@ async def main(page: ft.Page):
             await stop_current_audio()
             selected_urls = []
             for i, row in enumerate(results_list.controls):
-                if isinstance(row, ft.Row):
-                    cb = row.controls[0]
-                    if isinstance(cb, ft.Checkbox) and cb.value:
-                        selected_urls.append(search_results_data[i]["url"])
+                cb = _checkbox_of(row)
+                if cb.value:
+                    selected_urls.append(search_results_data[i]["url"])
 
             if not selected_urls:
                 page.snack_bar = ft.SnackBar(ft.Text("Виберіть хоча б один трек!"))
@@ -328,26 +381,49 @@ async def main(page: ft.Page):
                     status_label.value = "Збереження..."
                     asyncio.run_coroutine_threadsafe(page.update_async(), loop)
 
-            # Налаштування без використання системного ffmpeg (адаптовано під Android)
             def _download_sync():
                 import yt_dlp  # лінивий імпорт, помилка потрапить у except нижче
+                os.makedirs(selected_folder, exist_ok=True)
                 ydl_opts = {
-                    "format": "m4a/bestaudio/best",
+                    "format": "bestaudio[ext=m4a]/bestaudio/best",
                     "outtmpl": os.path.join(selected_folder, "%(title)s.%(ext)s"),
                     "progress_hooks": [_progress_hook],
                     "quiet": True,
                     "no_warnings": True,
-                    "ignoreerrors": True,
+                    # ПРИБРАНО "ignoreerrors": True — саме через нього застосунок
+                    # раніше рапортував "успіх", навіть якщо реально нічого не
+                    # завантажилось. Тепер справжня помилка долетить до except
+                    # нижче і користувач її побачить.
                 }
+                saved_files = []
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download(selected_urls)
+                    for single_url in selected_urls:
+                        info = ydl.extract_info(single_url, download=True)
+                        saved_files.append(ydl.prepare_filename(info))
+                return saved_files
 
             try:
-                await loop.run_in_executor(None, _download_sync)
-                progress_bar.value = 1.0
-                status_label.value = "Завантаження завершено!"
-                page.snack_bar = ft.SnackBar(ft.Text("Усі треки успішно збережено!"))
-                page.snack_bar.open = True
+                saved_files = await loop.run_in_executor(None, _download_sync)
+                existing = [f for f in saved_files if f and os.path.exists(f)]
+
+                if len(existing) == len(selected_urls) and existing:
+                    progress_bar.value = 1.0
+                    status_label.value = f"Готово! Збережено {len(existing)} файл(ів) у: {selected_folder}"
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"Збережено {len(existing)} трек(ів) у {selected_folder}")
+                    )
+                    page.snack_bar.open = True
+                elif existing:
+                    status_label.value = (
+                        f"Частково завершено: {len(existing)} із {len(selected_urls)} у {selected_folder}"
+                    )
+                    page.snack_bar = ft.SnackBar(ft.Text("Не всі треки вдалося зберегти."))
+                    page.snack_bar.open = True
+                else:
+                    status_label.value = "Файли не збереглися. Перевірте папку та доступ до неї."
+                    page.snack_bar = ft.SnackBar(ft.Text("Завантаження не вдалося зберегти на диск."))
+                    page.snack_bar.open = True
+
             except Exception as exc:
                 status_label.value = "Помилка завантаження"
                 page.snack_bar = ft.SnackBar(ft.Text(f"Помилка: {exc}"))
@@ -360,42 +436,47 @@ async def main(page: ft.Page):
         page.add(
             ft.Column(
                 controls=[
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Text("Пошук музики", weight=ft.FontWeight.BOLD),
-                                ft.Row([search_input, limit_combo, search_button]),
-                                ft.Container(content=results_list, height=240),
-                                ft.Row([select_all_btn, clear_btn, ft.Container(expand=True), download_btn]),
-                            ]),
-                            padding=10,
-                        )
+                    ft.Text("🎵 Music Downloader", size=20, weight=ft.FontWeight.BOLD),
+
+                    # --- Пошук: вертикальний стек замість тісного Row ---
+                    ft.Column(
+                        controls=[
+                            search_input,
+                            ft.Row(
+                                controls=[limit_combo, search_button],
+                                spacing=8,
+                            ),
+                        ],
+                        spacing=8,
                     ),
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Text("Папка збереження", weight=ft.FontWeight.BOLD),
-                                ft.Row([folder_input, folder_button]),
-                            ]),
-                            padding=10,
-                        )
+
+                    ft.Container(
+                        content=results_list,
+                        height=320,
+                        border=ft.border.all(1, ft.colors.GREY_300),
+                        border_radius=8,
                     ),
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Text("Статус", weight=ft.FontWeight.BOLD),
-                                status_label,
-                                progress_bar,
-                            ]),
-                            padding=10,
-                        )
-                    ),
+
+                    ft.Row(controls=[select_all_btn, clear_btn], spacing=8),
+                    download_btn,
+
+                    ft.Divider(),
+
+                    ft.Text("Папка збереження", weight=ft.FontWeight.BOLD, size=14),
+                    ft.Row(controls=[folder_input, folder_button], spacing=4),
+
+                    ft.Divider(),
+
+                    ft.Text("Статус", weight=ft.FontWeight.BOLD, size=14),
+                    status_label,
+                    progress_bar,
                 ],
+                spacing=12,
                 expand=True,
             )
         )
     except Exception as main_err:
-        page.add(ft.Text(f"Помилка запуску додатку: {main_err}", color="red"))
+        page.add(ft.Text(f"Помилка запуску додатку: {main_err}", color="red", selectable=True))
 
 
 if __name__ == "__main__":
@@ -404,7 +485,7 @@ if __name__ == "__main__":
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
-        
+
         def error_view(page: ft.Page):
             page.add(
                 ft.Text("Критична помилка при запуску:", color="red", weight="bold"),
