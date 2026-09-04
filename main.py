@@ -37,9 +37,6 @@ def get_default_download_dir():
     Шукаємо реальну публічну папку "Завантаження" на Android.
     Якщо немає прав/доступу - надійно падаємо в папку самого застосунку
     (вона завжди доступна для запису без жодних дозволів).
-    Раніше тут був шлях "~/Storage/Downloads" - це шлях з Termux,
-    якого на звичайному Android без Termux просто не існує, тому файли
-    мовчки летіли у тимчасову системну папку.
     """
     android_downloads = "/storage/emulated/0/Download"
     try:
@@ -67,34 +64,14 @@ async def main(page: ft.Page):
         page.theme_mode = ft.ThemeMode.LIGHT
         page.padding = 10
 
-        page.window_width = 780
-        page.window_height = 680
-
-        default_dir = get_default_download_dir()
-
-        # Папка завантаження ЗАВЖДИ фіксована - вибір папки прибрано з GUI
-        # на явне прохання: застосунок завжди зберігає у стандартну
-        # публічну папку "Завантаження" (або в папку застосунку, якщо
-        # доступу до публічної немає - див. get_default_download_dir()).
-        selected_folder = default_dir
+        selected_folder = get_default_download_dir()
         search_results_data = []
-        current_audio = None
-
-        async def stop_current_audio():
-            nonlocal current_audio
-            if current_audio:
-                try:
-                    current_audio.pause()
-                except Exception:
-                    pass
-                if current_audio in page.overlay:
-                    page.overlay.remove(current_audio)
-                current_audio = None
-                await page.update_async()
 
         search_input = ft.TextField(
-            hint_text="Пошук музики...",
+            hint_text="Введіть назву пісні або виконавця...",
             expand=True,
+            text_size=16,
+            content_padding=12,
         )
 
         limit_combo = ft.Dropdown(
@@ -104,17 +81,35 @@ async def main(page: ft.Page):
                 ft.dropdown.Option("20"),
             ],
             value="10",
-            width=75,
+            width=80,
         )
 
-        search_button = ft.ElevatedButton("Шукати")
-        results_list = ft.ListView(expand=True, spacing=5, padding=5)
+        # Кнопка пошуку - тепер це кругла іконка-лупа, а не текстова кнопка,
+        # щоб не забирати горизонтальний простір у поля вводу.
+        search_button = ft.IconButton(
+            icon=ft.icons.SEARCH,
+            icon_color=ft.colors.WHITE,
+            bgcolor=ft.colors.BLUE,
+            icon_size=26,
+            tooltip="Шукати",
+        )
 
-        select_all_btn = ft.OutlinedButton("Все")
-        clear_btn = ft.OutlinedButton("Скинути")
-        download_btn = ft.ElevatedButton("Завантажити", disabled=True)
+        results_list = ft.ListView(expand=True, spacing=6, padding=5)
 
-        status_label = ft.Text("Готовий до роботи")
+        select_all_btn = ft.OutlinedButton("Все", expand=True)
+        clear_btn = ft.OutlinedButton("Скинути", expand=True)
+
+        # Кнопка завантаження тепер зелена, повністю окремим рядком, щоб
+        # явно виділятись серед інших елементів керування.
+        download_btn = ft.ElevatedButton(
+            "Завантажити обране",
+            icon=ft.icons.DOWNLOAD,
+            disabled=True,
+            bgcolor=ft.colors.GREEN,
+            color=ft.colors.WHITE,
+        )
+
+        status_label = ft.Text("Готовий до роботи", size=13)
         progress_bar = ft.ProgressBar(value=0, visible=True)
 
         async def set_busy(busy: bool):
@@ -126,60 +121,14 @@ async def main(page: ft.Page):
             download_btn.disabled = busy
             await page.update_async()
 
-        async def play_audio_preview(url: str, play_btn: ft.IconButton):
-            nonlocal current_audio
-            await stop_current_audio()
-
-            play_btn.icon = ft.icons.HOURGLASS_EMPTY
-            await page.update_async()
-
-            loop = asyncio.get_running_loop()
-            tmp_dir = tempfile.mkdtemp(prefix="preview_")
-
-            def _download_preview():
-                import yt_dlp  # лінивий імпорт, помилка потрапить у except нижче
-                # Завантажуємо короткий локальний файл прев'ю замість прямого
-                # стрімінгу: пряме посилання YouTube часто вимагає спеціальних
-                # заголовків (headers/Referer), які плеєр Flet передати не може,
-                # тому пряме відтворення URL нерідко падає з мережевою помилкою.
-                ydl_opts = {
-                    "format": "bestaudio[ext=m4a]/bestaudio/best",
-                    "outtmpl": os.path.join(tmp_dir, "preview.%(ext)s"),
-                    "quiet": True,
-                    "no_warnings": True,
-                    "noplaylist": True,
-                }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    return ydl.prepare_filename(info)
-
-            try:
-                local_path = await loop.run_in_executor(None, _download_preview)
-                if local_path and os.path.exists(local_path):
-                    # ВАЖЛИВО: ft.Audio на Android вимагає, щоб локальний файл
-                    # передавався як file:// URI, а не як голий шлях файлової
-                    # системи. Без цього нативний плеєр кидає виняток на рівні
-                    # Flutter/Dart, який Python не бачить і не може перехопити -
-                    # саме це й виглядало як "червона смуга + зависання".
-                    audio_src = f"file://{local_path}"
-                    audio = ft.Audio(src=audio_src, autoplay=True)
-                    current_audio = audio
-                    page.overlay.append(audio)
-                    play_btn.icon = ft.icons.STOP
-                    await page.update_async()
-                else:
-                    play_btn.icon = ft.icons.PLAY_ARROW
-                    page.snack_bar = ft.SnackBar(ft.Text("Не вдалося отримати аудіо для прослуховування."))
-                    page.snack_bar.open = True
-                    await page.update_async()
-            except Exception as exc:
-                play_btn.icon = ft.icons.PLAY_ARROW
-                page.snack_bar = ft.SnackBar(ft.Text(f"Помилка відтворення: {exc}"))
-                page.snack_bar.open = True
-                await page.update_async()
+        def open_preview(url: str):
+            # Замість вбудованого аудіо-плеєра (нестабільний на цій збірці
+            # Android) відкриваємо трек у браузері/додатку YouTube - це
+            # використовує вбудований, перевірений механізм ОС і не залежить
+            # від крихкого аудіо-плагіна Flet.
+            page.launch_url(url)
 
         async def start_search(e):
-            await stop_current_audio()
             query = search_input.value.strip()
             if not query:
                 page.snack_bar = ft.SnackBar(ft.Text("Введіть назву треку!"))
@@ -240,37 +189,52 @@ async def main(page: ft.Page):
 
                     search_results_data.append({"url": url, "title": display_title})
 
-                    checkbox = ft.Checkbox(
-                        label=f"{display_title} {duration_str}",
-                        value=False,
-                        expand=True,
+                    checkbox = ft.Checkbox(value=False)
+
+                    title_text = ft.Text(
+                        display_title,
+                        size=13,
+                        max_lines=2,
+                        overflow=ft.TextOverflow.ELLIPSIS,
                     )
+                    duration_text = ft.Text(duration_str, size=11, color=ft.colors.GREY_600)
 
                     play_button = ft.IconButton(
                         icon=ft.icons.PLAY_ARROW,
-                        tooltip="Прослухати",
+                        tooltip="Відкрити на YouTube",
+                        icon_size=22,
                     )
 
-                    async def make_play_handler(target_url, btn):
-                        async def handler(e_click):
-                            if btn.icon == ft.icons.STOP:
-                                await stop_current_audio()
-                                btn.icon = ft.icons.PLAY_ARROW
-                                await page.update_async()
-                            else:
-                                await play_audio_preview(target_url, btn)
+                    def make_play_handler(target_url):
+                        def handler(e_click):
+                            open_preview(target_url)
                         return handler
 
-                    play_button.on_click = await make_play_handler(url, play_button)
+                    play_button.on_click = make_play_handler(url)
 
-                    # ЄДИНА зміна в цьому блоці порівняно з робочою версією:
-                    # кнопку програвання загорнуто в Container із ФІКСОВАНОЮ
-                    # шириною (48), щоб вона більше не могла накладатись на
-                    # текст назви незалежно від його довжини. Сам Row і його
-                    # розташування (SPACE_BETWEEN) НЕ чіпали.
-                    row_item = ft.Row(
-                        controls=[checkbox, ft.Container(content=play_button, width=48)],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    # Рядок результату: чекбокс + текст займають доступну
+                    # ширину (expand=True), а кнопка програвання сидить у
+                    # контейнері ФІКСОВАНОЇ ширини (48) праворуч - вона
+                    # більше не може накладатись на текст назви.
+                    row_item = ft.Container(
+                        content=ft.Row(
+                            controls=[
+                                checkbox,
+                                ft.Container(
+                                    content=ft.Column(
+                                        controls=[title_text, duration_text],
+                                        spacing=2,
+                                        tight=True,
+                                    ),
+                                    expand=True,
+                                ),
+                                ft.Container(content=play_button, width=48),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=4,
+                        ),
+                        padding=ft.padding.symmetric(vertical=2, horizontal=2),
+                        border=ft.border.only(bottom=ft.BorderSide(1, ft.colors.GREY_300)),
                     )
 
                     results_list.controls.append(row_item)
@@ -293,33 +257,28 @@ async def main(page: ft.Page):
         search_button.on_click = start_search
         search_input.on_submit = start_search
 
+        def _checkbox_of(container_row):
+            return container_row.content.controls[0]
+
         async def select_all_click(e):
             for row in results_list.controls:
-                if isinstance(row, ft.Row):
-                    cb = row.controls[0]
-                    if isinstance(cb, ft.Checkbox):
-                        cb.value = True
+                _checkbox_of(row).value = True
             await page.update_async()
 
         async def clear_selection_click(e):
             for row in results_list.controls:
-                if isinstance(row, ft.Row):
-                    cb = row.controls[0]
-                    if isinstance(cb, ft.Checkbox):
-                        cb.value = False
+                _checkbox_of(row).value = False
             await page.update_async()
 
         select_all_btn.on_click = select_all_click
         clear_btn.on_click = clear_selection_click
 
         async def start_download(e):
-            await stop_current_audio()
             selected_urls = []
             for i, row in enumerate(results_list.controls):
-                if isinstance(row, ft.Row):
-                    cb = row.controls[0]
-                    if isinstance(cb, ft.Checkbox) and cb.value:
-                        selected_urls.append(search_results_data[i]["url"])
+                cb = _checkbox_of(row)
+                if cb.value:
+                    selected_urls.append(search_results_data[i]["url"])
 
             if not selected_urls:
                 page.snack_bar = ft.SnackBar(ft.Text("Виберіть хоча б один трек!"))
@@ -359,9 +318,6 @@ async def main(page: ft.Page):
                     "progress_hooks": [_progress_hook],
                     "quiet": True,
                     "no_warnings": True,
-                    # ПРИБРАНО "ignoreerrors": True - саме через нього застосунок
-                    # раніше рапортував "успіх", навіть якщо реально нічого не
-                    # завантажилось.
                 }
                 saved_files = []
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -376,19 +332,15 @@ async def main(page: ft.Page):
 
                 if len(existing) == len(selected_urls) and existing:
                     progress_bar.value = 1.0
-                    status_label.value = f"Готово! Збережено {len(existing)} файл(ів) у: {selected_folder}"
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text(f"Збережено {len(existing)} трек(ів) у {selected_folder}")
-                    )
+                    status_label.value = f"Готово! Збережено {len(existing)} трек(ів)."
+                    page.snack_bar = ft.SnackBar(ft.Text(f"Збережено {len(existing)} трек(ів)."))
                     page.snack_bar.open = True
                 elif existing:
-                    status_label.value = (
-                        f"Частково завершено: {len(existing)} із {len(selected_urls)} у {selected_folder}"
-                    )
+                    status_label.value = f"Частково: {len(existing)} із {len(selected_urls)}."
                     page.snack_bar = ft.SnackBar(ft.Text("Не всі треки вдалося зберегти."))
                     page.snack_bar.open = True
                 else:
-                    status_label.value = "Файли не збереглися. Перевірте папку та доступ до неї."
+                    status_label.value = "Файли не збереглися."
                     page.snack_bar = ft.SnackBar(ft.Text("Завантаження не вдалося зберегти на диск."))
                     page.snack_bar.open = True
 
@@ -401,32 +353,39 @@ async def main(page: ft.Page):
 
         download_btn.on_click = start_download
 
+        # ---- ВЕРСТКА ----
+        # Головний Column розтягнутий на всю сторінку (expand=True).
+        # Всередині: верх (пошук) - фіксований; середина (результати) -
+        # expand=True, займає ВСЕ вільне місце; низ (кнопки + статус) -
+        # фіксований і притиснутий до низу екрана.
         page.add(
             ft.Column(
                 controls=[
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Text("Пошук музики", weight=ft.FontWeight.BOLD),
-                                ft.Row([search_input, limit_combo, search_button]),
-                                ft.Container(content=results_list, height=240),
-                                ft.Row([select_all_btn, clear_btn, ft.Container(expand=True), download_btn]),
-                            ]),
-                            padding=10,
-                        )
+                    ft.Text("🎵 Music Downloader", size=18, weight=ft.FontWeight.BOLD),
+
+                    # Поле пошуку - на всю ширину окремим рядком (більше не
+                    # затиснуте лічильником і кнопкою).
+                    search_input,
+                    ft.Row(controls=[limit_combo, search_button], spacing=8),
+
+                    # Результати пошуку - займають усе вільне місце.
+                    ft.Container(
+                        content=results_list,
+                        expand=True,
+                        border=ft.border.all(1, ft.colors.GREY_300),
+                        border_radius=8,
                     ),
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Text("Статус", weight=ft.FontWeight.BOLD),
-                                ft.Text(f"Папка завантаження: {selected_folder}", size=12, color=ft.colors.GREY_600),
-                                status_label,
-                                progress_bar,
-                            ]),
-                            padding=10,
-                        )
-                    ),
+
+                    ft.Row(controls=[select_all_btn, clear_btn], spacing=8),
+                    download_btn,
+
+                    ft.Divider(),
+
+                    # Статус - фіксований блок унизу екрана.
+                    status_label,
+                    progress_bar,
                 ],
+                spacing=10,
                 expand=True,
             )
         )
