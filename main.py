@@ -63,8 +63,11 @@ async def main(page: ft.Page):
         page.title = "Music Downloader"
         page.theme_mode = ft.ThemeMode.LIGHT
         page.padding = 10
-        page.scroll = ft.ScrollMode.AUTO
-        page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
+        # page.scroll навмисно НЕ чіпаємо тут — прокрутку вішаємо на сам
+        # Column нижче (scroll=... + expand=True). Якщо прокрутку задати
+        # одночасно і на page, і залишити expand=True на дочірньому Column,
+        # Flutter отримує суперечливі обмеження висоти і замість нормальної
+        # прокрутки просто обрізає/ховає все, що не влізло на екран.
 
         default_dir = get_default_download_dir()
         selected_folder = default_dir
@@ -472,13 +475,8 @@ async def main(page: ft.Page):
                     progress_bar,
                 ],
                 spacing=12,
-                # ВАЖЛИВО: expand=True тут НЕ ставимо. Сторінка вже прокручується
-                # (page.scroll = AUTO), а це означає, що висота контенту
-                # необмежена і сама підлаштовується під вміст. Якщо додати
-                # expand=True до Column у прокручуваному контейнері -
-                # Flutter отримує суперечливі обмеження висоти і "згортає"
-                # всі елементи в купу в лівому верхньому куті замість
-                # нормального розташування.
+                scroll=ft.ScrollMode.AUTO,
+                expand=True,
             )
         )
     except Exception as main_err:
