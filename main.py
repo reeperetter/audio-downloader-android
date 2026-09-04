@@ -72,6 +72,10 @@ async def main(page: ft.Page):
 
         default_dir = get_default_download_dir()
 
+        # Папка завантаження ЗАВЖДИ фіксована - вибір папки прибрано з GUI
+        # на явне прохання: застосунок завжди зберігає у стандартну
+        # публічну папку "Завантаження" (або в папку застосунку, якщо
+        # доступу до публічної немає - див. get_default_download_dir()).
         selected_folder = default_dir
         search_results_data = []
         current_audio = None
@@ -110,27 +114,8 @@ async def main(page: ft.Page):
         clear_btn = ft.OutlinedButton("Скинути")
         download_btn = ft.ElevatedButton("Завантажити", disabled=True)
 
-        folder_input = ft.TextField(
-            value=selected_folder, read_only=True, expand=True
-        )
-        folder_button = ft.ElevatedButton("Огляд")
-
         status_label = ft.Text("Готовий до роботи")
         progress_bar = ft.ProgressBar(value=0, visible=True)
-
-        async def on_folder_result(e: ft.FilePickerResultEvent):
-            nonlocal selected_folder
-            if e.path:
-                selected_folder = e.path
-                folder_input.value = e.path
-                await page.update_async()
-
-        file_picker = ft.FilePicker(on_result=on_folder_result)
-        page.overlay.append(file_picker)
-
-        folder_button.on_click = lambda _: file_picker.get_directory_path(
-            dialog_title="Оберіть папку збереження"
-        )
 
         async def set_busy(busy: bool):
             search_input.disabled = busy
@@ -139,7 +124,6 @@ async def main(page: ft.Page):
             select_all_btn.disabled = busy
             clear_btn.disabled = busy
             download_btn.disabled = busy
-            folder_button.disabled = busy
             await page.update_async()
 
         async def play_audio_preview(url: str, play_btn: ft.IconButton):
@@ -172,7 +156,13 @@ async def main(page: ft.Page):
             try:
                 local_path = await loop.run_in_executor(None, _download_preview)
                 if local_path and os.path.exists(local_path):
-                    audio = ft.Audio(src=local_path, autoplay=True)
+                    # ВАЖЛИВО: ft.Audio на Android вимагає, щоб локальний файл
+                    # передавався як file:// URI, а не як голий шлях файлової
+                    # системи. Без цього нативний плеєр кидає виняток на рівні
+                    # Flutter/Dart, який Python не бачить і не може перехопити -
+                    # саме це й виглядало як "червона смуга + зависання".
+                    audio_src = f"file://{local_path}"
+                    audio = ft.Audio(src=audio_src, autoplay=True)
                     current_audio = audio
                     page.overlay.append(audio)
                     play_btn.icon = ft.icons.STOP
@@ -428,16 +418,8 @@ async def main(page: ft.Page):
                     ft.Card(
                         content=ft.Container(
                             content=ft.Column([
-                                ft.Text("Папка збереження", weight=ft.FontWeight.BOLD),
-                                ft.Row([folder_input, folder_button]),
-                            ]),
-                            padding=10,
-                        )
-                    ),
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
                                 ft.Text("Статус", weight=ft.FontWeight.BOLD),
+                                ft.Text(f"Папка завантаження: {selected_folder}", size=12, color=ft.colors.GREY_600),
                                 status_label,
                                 progress_bar,
                             ]),
