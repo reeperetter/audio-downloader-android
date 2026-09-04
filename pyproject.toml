@@ -27,3 +27,9 @@ permissions = [
     "android.permission.READ_EXTERNAL_STORAGE",
     "android.permission.WRITE_EXTERNAL_STORAGE",
 ]
+
+# Колір фону екрана завантаження застосунку (той, що показується поки
+# Python-рушій ще стартує) - дуже темний, майже чорний, синій.
+[tool.flet.splash]
+color = "#0A0E1A"
+dark_color = "#0A0E1A"

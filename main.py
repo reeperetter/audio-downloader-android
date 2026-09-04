@@ -62,6 +62,9 @@ async def main(page: ft.Page):
     try:
         page.title = "Music Downloader"
         page.theme_mode = ft.ThemeMode.LIGHT
+        # Тепла кольорова гама застосунку (жовтогарячий/бурштиновий).
+        page.theme = ft.Theme(color_scheme_seed=ft.colors.DEEP_ORANGE)
+        page.bgcolor = ft.colors.ORANGE_50
         page.padding = 10
 
         selected_folder = get_default_download_dir()
@@ -71,7 +74,8 @@ async def main(page: ft.Page):
             hint_text="Введіть назву пісні або виконавця...",
             expand=True,
             text_size=16,
-            content_padding=12,
+            content_padding=ft.padding.symmetric(horizontal=12, vertical=14),
+            height=54,
         )
 
         limit_combo = ft.Dropdown(
@@ -82,14 +86,16 @@ async def main(page: ft.Page):
             ],
             value="10",
             width=80,
+            height=54,
+            content_padding=ft.padding.symmetric(horizontal=10, vertical=14),
         )
 
-        # Кнопка пошуку - кругла іконка-лупа, стоїть в одному рядку разом
-        # із полем вводу і лічильником кількості результатів.
+        # Кнопка пошуку - кругла іконка-лупа, тепла (жовтогаряча) барва,
+        # стоїть в одному рядку разом із полем вводу і лічильником.
         search_button = ft.IconButton(
             icon=ft.icons.SEARCH,
             icon_color=ft.colors.WHITE,
-            bgcolor=ft.colors.BLUE,
+            bgcolor=ft.colors.DEEP_ORANGE,
             icon_size=26,
             tooltip="Шукати",
         )
@@ -99,15 +105,19 @@ async def main(page: ft.Page):
         select_all_btn = ft.OutlinedButton("Все", expand=True)
         clear_btn = ft.OutlinedButton("Скинути", expand=True)
 
-        # Кнопка завантаження - зелена, на всю ширину екрана і трохи товща
-        # по вертикалі (додатковий вертикальний padding через style).
+        # Кнопка завантаження - тепла барва, товща по вертикалі. Реальна
+        # розтяжка на всю ширину задається нижче через
+        # horizontal_alignment=STRETCH батьківського Column (сама кнопка,
+        # якщо покласти окремим елементом Column без stretch, тягнеться
+        # лише під розмір свого тексту - це і була причина "не на всю
+        # ширину" минулого разу).
         download_btn = ft.ElevatedButton(
             "Завантажити обране",
             icon=ft.icons.DOWNLOAD,
             disabled=True,
-            bgcolor=ft.colors.GREEN,
+            bgcolor=ft.colors.DEEP_ORANGE,
             color=ft.colors.WHITE,
-            style=ft.ButtonStyle(padding=ft.padding.symmetric(vertical=20)),
+            style=ft.ButtonStyle(padding=ft.padding.symmetric(vertical=22)),
         )
 
         status_label = ft.Text("Готовий до роботи", size=13)
@@ -401,6 +411,7 @@ async def main(page: ft.Page):
                 ],
                 spacing=10,
                 expand=True,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             )
         )
     except Exception as main_err:
